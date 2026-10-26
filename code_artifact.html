@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>六年級作業訂正顯示與管理系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts: Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #f1f5f9;
+        }
+
+        /* 10欄網格設定 (一列10人，共3列29人) */
+        .grid-10-cols {
+            display: grid;
+            grid-template-columns: repeat(10, minmax(0, 1fr));
+        }
+
+        /* 座號按鈕狀態與立體觸控效果 */
+        .seat-btn {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        .seat-btn:active {
+            transform: scale(0.92);
+        }
+
+        /* 預設：無須訂正 (淺灰白) */
+        .seat-none {
+            background-color: #f8fafc;
+            color: #94a3b8;
+            border: 2px solid #e2e8f0;
+            box-shadow: 0 2px 0 #cbd5e1;
+        }
+        .seat-none:hover {
+            border-color: #cbd5e1;
+            background-color: #f1f5f9;
+        }
+
+        /* 紅色：待訂正 (高對比鮮紅) */
+        .seat-red {
+            background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+            color: #ffffff;
+            border: 2px solid #b91c1c;
+            box-shadow: 0 4px 0 #991b1b, 0 4px 10px rgba(239, 68, 68, 0.35);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            animation: pulse-subtle 2s infinite;
+        }
+
+        /* 綠色：訂正完成 (高對比鮮綠) */
+        .seat-green {
+            background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+            color: #ffffff;
+            border: 2px solid #15803d;
+            box-shadow: 0 4px 0 #166534, 0 4px 10px rgba(34, 197, 94, 0.3);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+        }
+
+        @keyframes pulse-subtle {
+            0%, 100% { filter: brightness(100%); }
+            50% { filter: brightness(112%); }
+        }
+
+        /* 時間到閃爍動畫 */
+        @keyframes alarm-flash {
+            0%, 100% { background-color: #ef4444; color: white; transform: scale(1.03); }
+            50% { background-color: #fef08a; color: #b91c1c; transform: scale(1); }
+        }
+        .timer-alarm {
+            animation: alarm-flash 0.6s infinite;
+        }
+
+        /* 自訂捲軸美化 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e2e8f0;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-slate-800">
+
+    <!-- ================= 頂部共用導覽與工具列 ================= -->
+    <header class="bg-slate-900 text-white shadow-xl sticky top-0 z-40 px-4 py-2.5 border-b-4 border-indigo-500">
+        <div class="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
+            
+            <!-- 左側：標題與日期選擇器 -->
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2.5 bg-indigo-600 px-3.5 py-2 rounded-xl shadow-inner">
+                    <i class="fa-solid fa-chalkboard-user text-2xl text-amber-300"></i>
+                    <span class="text-xl font-black tracking-wide hidden sm:inline">六年級作業訂正系統</span>
+                </div>
+
+                <!-- 日期輸入框 -->
+                <div class="flex items-center bg-slate-800 border-2 border-slate-600 rounded-xl px-3 py-1.5 hover:border-indigo-400 transition">
+                    <label for="datePicker" class="text-amber-400 font-bold mr-2 text-base flex items-center gap-1.5 cursor-pointer">
+                        <i class="fa-regular fa-calendar-check text-lg"></i> 日期：
+                    </label>
+                    <input type="date" id="datePicker" 
+                        class="bg-transparent text-white text-xl font-black focus:outline-none cursor-pointer">
+                </div>
+            </div>
+
+            <!-- 中間：超大醒目分頁切換按鈕 -->
+            <div class="flex items-center bg-slate-800 p-1.5 rounded-2xl border border-slate-700 gap-2">
+                <button id="tabBtnHome" onclick="switchTab('home')" 
+                    class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-lg transition-all duration-200">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>首頁：每日訂正統計資料</span>
+                </button>
+                <button id="tabBtnBoard" onclick="switchTab('board')" 
+                    class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-lg transition-all duration-200">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    <span>第二頁：當日作業訂正看板</span>
+                    <span id="headerTotalRedBadge" class="ml-1 px-2.5 py-0.5 text-sm rounded-full bg-rose-600 text-white font-black">0</span>
+                </button>
+            </div>
+
+            <!-- 右側：大螢幕倒數計時器與音效開關 -->
+            <div class="flex items-center gap-2 bg-slate-800 px-3.5 py-1.5 rounded-2xl border border-slate-700">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-stopwatch text-amber-400 text-2xl"></i>
+                    <!-- 時間顯示 -->
+                    <div id="timerDisplay" class="font-mono text-3xl font-black tracking-wider bg-slate-950 text-emerald-400 px-3.5 py-1 rounded-xl border border-slate-700 min-w-[115px] text-center">
+                        00:00
+                    </div>
+                </div>
+
+                <!-- 加時快捷鍵 -->
+                <div class="flex items-center gap-1">
+                    <button onclick="addTimerMinutes(1)" class="bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm transition">+1分</button>
+                    <button onclick="addTimerMinutes(3)" class="bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm transition">+3分</button>
+                    <button onclick="addTimerMinutes(5)" class="bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm transition">+5分</button>
+                    <button onclick="addTimerMinutes(10)" class="bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold px-2.5 py-1.5 rounded-lg text-sm transition hidden xl:inline-block">+10分</button>
+                </div>
+
+                <!-- 開始/暫停與重設 -->
+                <div class="flex items-center gap-1.5 border-l border-slate-700 pl-2">
+                    <button id="timerStartBtn" onclick="toggleTimer()" class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black px-3.5 py-1.5 rounded-xl text-base transition flex items-center gap-1 shadow">
+                        <i class="fa-solid fa-play" id="timerPlayIcon"></i>
+                        <span id="timerStartText">開始</span>
+                    </button>
+                    <button onclick="resetTimer()" class="bg-rose-700 hover:bg-rose-600 active:scale-95 text-white font-bold px-2.5 py-1.5 rounded-xl text-sm transition" title="重設計時器">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                    <button id="soundToggleBtn" onclick="toggleSound()" class="bg-slate-700 hover:bg-slate-600 text-amber-300 px-2.5 py-1.5 rounded-xl text-base transition" title="切換提示音效">
+                        <i class="fa-solid fa-volume-high" id="soundIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- ================= 浮動提示訊息 (取代 alert) ================= -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- ================= 主要內容區 ================= -->
+    <main class="flex-1 max-w-[1920px] w-full mx-auto px-3 py-3 flex flex-col">
+
+        <!-- =============================================================== -->
+        <!-- 分頁一（首頁）：📊 每日訂正統計號碼資料                           -->
+        <!-- =============================================================== -->
+        <section id="pageHome" class="space-y-5 hidden">
+            
+            <!-- 1. 放學聯絡簿綜合總提醒看板 (超大字體、全班抬頭看) -->
+            <div class="bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 border-4 border-amber-400 rounded-3xl p-5 shadow-lg">
+                <div class="flex flex-wrap items-center justify-between gap-4 border-b-2 border-amber-200 pb-3 mb-4">
+                    <div class="flex items-center gap-3">
+                        <span class="bg-rose-600 text-white text-2xl font-black px-4 py-2 rounded-2xl shadow flex items-center gap-2">
+                            <i class="fa-solid fa-bullhorn animate-bounce"></i>
+                            請抄訂正功課於聯絡簿：
+                        </span>
+                        <span id="homeDateTitle" class="text-2xl font-black text-slate-700"></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="homeSummaryBadge" class="text-xl font-black px-4 py-1.5 rounded-full bg-rose-100 text-rose-700 border-2 border-rose-300">
+                            尚有 0 人未完成訂正
+                        </span>
+                        <button onclick="switchTab('board')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-black px-4 py-2 rounded-xl shadow transition flex items-center gap-2 text-lg">
+                            <i class="fa-solid fa-hand-pointer"></i> 前往今日訂正看板
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 依座號彙整今日未完成項目 -->
+                <div id="homeContactBookSummary" class="min-h-[80px] flex items-center">
+                    <!-- 由 JS 動態渲染 -->
+                </div>
+            </div>
+
+            <!-- 2. 今日三項作業訂正統計卡片 (A, B, C) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4" id="homeThreeCardsContainer">
+                <!-- 由 JS 動態渲染三張統計卡 -->
+            </div>
+
+            <!-- 3. 歷史每日訂正統計紀錄表 -->
+            <div class="bg-white rounded-3xl shadow-md border-2 border-slate-200 p-5">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div class="flex items-center gap-2.5">
+                        <i class="fa-solid fa-clock-rotate-left text-2xl text-indigo-600"></i>
+                        <h2 class="text-2xl font-black text-slate-800">歷史每日訂正統計紀錄表</h2>
+                        <span class="text-sm font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">系統自動儲存於本機瀏覽器</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportHistoryCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-1.5 shadow-sm">
+                            <i class="fa-solid fa-file-csv text-base"></i> 匯出 CSV 報表
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800 text-white text-base">
+                                <th class="py-3 px-4 rounded-tl-xl font-black w-36">日期</th>
+                                <th class="py-3 px-4 font-black">作業一（未訂正 / 已完成）</th>
+                                <th class="py-3 px-4 font-black">作業二（未訂正 / 已完成）</th>
+                                <th class="py-3 px-4 font-black">作業三（未訂正 / 已完成）</th>
+                                <th class="py-3 px-4 font-black w-48">未完成總座號</th>
+                                <th class="py-3 px-4 rounded-tr-xl font-black text-center w-40">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody" class="divide-y divide-slate-200 text-base font-bold">
+                            <!-- 由 JS 動態渲染 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- 分頁二（第二頁）：✏️ 當日三項作業訂正看板（左右三直欄並排）         -->
+        <!-- =============================================================== -->
+        <section id="pageBoard" class="flex-1 flex flex-col gap-3">
+            
+            <!-- 頂部：兩階段防呆模式切換列 & 狀態圖例 -->
+            <div class="bg-white rounded-2xl px-4 py-2.5 shadow-sm border-2 border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                
+                <!-- 左側：模式切換開關 -->
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="font-black text-slate-700 text-lg flex items-center gap-1.5">
+                        <i class="fa-solid fa-shield-halved text-indigo-600"></i> 操作模式切換：
+                    </span>
+                    <div class="inline-flex bg-slate-200 p-1.5 rounded-2xl gap-2">
+                        <button id="modeTeacherBtn" onclick="setInteractionMode('teacher')" 
+                            class="px-5 py-2 rounded-xl font-black text-lg transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-chalkboard-user"></i>
+                            <span>1. 老師設定模式（點選紅號）</span>
+                        </button>
+                        <button id="modeStudentBtn" onclick="setInteractionMode('student')" 
+                            class="px-5 py-2 rounded-xl font-black text-lg transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-child-reaching"></i>
+                            <span>2. 學生訂正模式（完成變綠）</span>
+                        </button>
+                    </div>
+                    <span id="modeInstructionText" class="text-base font-bold px-3.5 py-1.5 rounded-xl bg-amber-100 text-amber-900 border border-amber-300">
+                        <!-- 動態模式說明 -->
+                    </span>
+                </div>
+
+                <!-- 右側：顏色圖例說明 -->
+                <div class="flex items-center gap-4 text-base font-black">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-5 h-5 rounded-md bg-slate-100 border-2 border-slate-300 inline-block"></span>
+                        <span class="text-slate-600">無須訂正</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-5 h-5 rounded-md bg-red-500 border-2 border-red-700 inline-block shadow-sm"></span>
+                        <span class="text-red-600">紅色：待訂正</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-5 h-5 rounded-md bg-green-500 border-2 border-green-700 inline-block shadow-sm"></span>
+                        <span class="text-green-600">綠色：訂正完成</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 方案 B：左右三直欄並排 (區塊 A、區塊 B、區塊 C)，一列 10 人、共三列 (29人) -->
+            <div id="threeColumnsBoard" class="grid grid-cols-1 lg:grid-cols-3 gap-3.5 flex-1">
+                <!-- 由 JS 動態產生 3 個作業直欄區塊 -->
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- ================= 刪除確認自訂彈窗 (不使用 confirm) ================= -->
+    <div id="customModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border-4 border-slate-200 transform transition-all">
+            <div class="flex items-center gap-3 text-rose-600 mb-3">
+                <i class="fa-solid fa-triangle-exclamation text-3xl"></i>
+                <h3 id="modalTitle" class="text-2xl font-black">確認操作</h3>
+            </div>
+            <p id="modalMessage" class="text-lg font-bold text-slate-600 mb-6"></p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-black text-lg transition">
+                    取消
+                </button>
+                <button id="modalConfirmBtn" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-lg shadow transition">
+                    確定執行
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= JavaScript 應用程式邏輯 ================= -->
+    <script>
+        /*************************************************************
+         * 1. 全域常數與系統狀態定義
+         *************************************************************/
+        const TOTAL_STUDENTS = 29; // 六年級 29 人
+        const STORAGE_KEY = 'grade6_homework_correction_records_v1';
+        
+        // 常用作業快捷標籤
+        const QUICK_TAGS = ['國習', '數習', '數作', '甲本', '乙本', '考卷', '社習', '自習'];
+
+        // 狀態代碼：0 = 預設無須訂正(灰), 1 = 待訂正(紅), 2 = 訂正完成(綠)
+        const STATE_NONE = 0;
+        const STATE_RED = 1;
+        const STATE_GREEN = 2;
+
+        // 目前應用程式狀態
+        let currentTab = 'board';          // 預設開啟「第二頁：當日作業訂正看板」方便直接操作，也可隨時切回首頁
+        let currentMode = 'teacher';       // 'teacher' (老師設定模式) | 'student' (學生訂正模式)
+        let currentDate = getTodayString();
+        let soundEnabled = true;
+
+        // 當日三項作業資料結構
+        let currentDayData = createEmptyDayData(currentDate);
+
+        // 計時器狀態
+        let timerSeconds = 0;
+        let timerInterval = null;
+        let isTimerRunning = false;
+        let alarmInterval = null;
+
+        // Web Audio API 音效物件
+        let audioCtx = null;
+
+        /*************************************************************
+         * 2. 工具函式與音效引擎 (Web Audio API，不依賴外部音檔)
+         *************************************************************/
+        function getTodayString() {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function createEmptyDayData(dateStr) {
+            const createTask = (id, label) => {
+                const seats = {};
+                for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                    seats[i] = STATE_NONE;
+                }
+                return { id, label, title: '', seats };
+            };
+            return {
+                date: dateStr,
+                updatedAt: Date.now(),
+                tasks: [
+                    createTask('A', '作業項目一'),
+                    createTask('B', '作業項目二'),
+                    createTask('C', '作業項目三')
+                ]
+            };
+        }
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioCtx = new AudioContext();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // 播放音效：'click' (設定紅號), 'complete' (學生完成綠號鼓勵音), 'lock' (誤觸鎖定音), 'alarm' (計時結束)
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                if (!audioCtx) return;
+
+                const now = audioCtx.currentTime;
+
+                if (type === 'click') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(520, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'complete') {
+                    // 輕快雙音叮咚 (C5 -> G5)
+                    const notes = [523.25, 783.99];
+                    notes.forEach((freq, idx) => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+                        gain.gain.setValueAtTime(0.25, now + idx * 0.09);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.09 + 0.25);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now + idx * 0.09);
+                        osc.stop(now + idx * 0.09 + 0.25);
+                    });
+                } else if (type === 'lock') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(160, now);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.12);
+                } else if (type === 'alarm') {
+                    // 鬧鐘嗶嗶聲
+                    [880, 987.77, 880, 987.77].forEach((freq, idx) => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+                        gain.gain.setValueAtTime(0.2, now + idx * 0.14);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.11);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now + idx * 0.14);
+                        osc.stop(now + idx * 0.14 + 0.11);
+                    });
+                }
+            } catch (e) {
+                console.warn('Audio play failed:', e);
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const icon = document.getElementById('soundIcon');
+            if (soundEnabled) {
+                icon.className = 'fa-solid fa-volume-high';
+                showToast('🔊 已開啟提示音效', 'info');
+                playSound('click');
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark text-slate-400';
+                showToast('🔇 已關閉提示音效', 'info');
+            }
+        }
+
+        // 浮動通知 (取代 alert)
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const bgMap = {
+                info: 'bg-slate-800 border-indigo-400 text-white',
+                success: 'bg-emerald-700 border-emerald-300 text-white',
+                warning: 'bg-amber-600 border-amber-300 text-white',
+                error: 'bg-rose-700 border-rose-300 text-white'
+            };
+            toast.className = `${bgMap[type] || bgMap.info} border-l-8 px-5 py-3 rounded-2xl shadow-2xl font-black text-lg flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 2400);
+        }
+
+        /*************************************************************
+         * 3. LocalStorage 存取與日期切換管理
+         *************************************************************/
+        function getAllHistoryRecords() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch (e) {
+                console.error('Failed to read localStorage:', e);
+                return {};
+            }
+        }
+
+        function saveCurrentDayToStorage() {
+            try {
+                const allRecords = getAllHistoryRecords();
+                currentDayData.updatedAt = Date.now();
+                allRecords[currentDate] = currentDayData;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(allRecords));
+                updateHeaderBadge();
+            } catch (e) {
+                console.error('Failed to save to localStorage:', e);
+            }
+        }
+
+        function loadDateData(dateStr) {
+            currentDate = dateStr;
+            document.getElementById('datePicker').value = dateStr;
+            const allRecords = getAllHistoryRecords();
+            if (allRecords[dateStr]) {
+                currentDayData = JSON.parse(JSON.stringify(allRecords[dateStr]));
+            } else {
+                currentDayData = createEmptyDayData(dateStr);
+                saveCurrentDayToStorage();
+            }
+            renderAll();
+        }
+
+        /*************************************************************
+         * 4. 分頁與操作模式切換
+         *************************************************************/
+        function switchTab(tab) {
+            currentTab = tab;
+            const pageHome = document.getElementById('pageHome');
+            const pageBoard = document.getElementById('pageBoard');
+            const tabBtnHome = document.getElementById('tabBtnHome');
+            const tabBtnBoard = document.getElementById('tabBtnBoard');
+
+            if (tab === 'home') {
+                pageHome.classList.remove('hidden');
+                pageBoard.classList.add('hidden');
+                tabBtnHome.className = 'flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-lg transition-all duration-200 bg-amber-400 text-slate-950 shadow-md scale-[1.02]';
+                tabBtnBoard.className = 'flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-lg transition-all duration-200 text-slate-300 hover:bg-slate-700';
+                renderHomePage();
+            } else {
+                pageHome.classList.add('hidden');
+                pageBoard.classList.remove('hidden');
+                tabBtnBoard.className = 'flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-lg transition-all duration-200 bg-amber-400 text-slate-950 shadow-md scale-[1.02]';
+                tabBtnHome.className = 'flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-lg transition-all duration-200 text-slate-300 hover:bg-slate-700';
+                renderBoardPage();
+            }
+        }
+
+        function setInteractionMode(mode) {
+            currentMode = mode;
+            const teacherBtn = document.getElementById('modeTeacherBtn');
+            const studentBtn = document.getElementById('modeStudentBtn');
+            const instruction = document.getElementById('modeInstructionText');
+
+            if (mode === 'teacher') {
+                teacherBtn.className = 'px-5 py-2 rounded-xl font-black text-lg transition-all flex items-center gap-2 bg-rose-600 text-white shadow-md scale-[1.02]';
+                studentBtn.className = 'px-5 py-2 rounded-xl font-black text-lg transition-all flex items-center gap-2 text-slate-600 hover:bg-slate-300';
+                instruction.innerHTML = '<i class="fa-solid fa-hand-point-up mr-1"></i> <b>老師設定中：</b>請輸入作業項目，並點選需要訂正的座號設為「🔴 紅色（待訂正）」。';
+                instruction.className = 'text-base font-bold px-3.5 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300';
+            } else {
+                studentBtn.className = 'px-5 py-2 rounded-xl font-black text-lg transition-all flex items-center gap-2 bg-emerald-600 text-white shadow-md scale-[1.02]';
+                teacherBtn.className = 'px-5 py-2 rounded-xl font-black text-lg transition-all flex items-center gap-2 text-slate-600 hover:bg-slate-300';
+                instruction.innerHTML = '<i class="fa-solid fa-check-double mr-1"></i> <b>學生訂正模式：</b>訂正完畢給老師檢查後，請點選自己的「🔴 紅色號碼」變成「🟢 綠色（訂正完成）」！';
+                instruction.className = 'text-base font-bold px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-300';
+            }
+            renderBoardPage();
+        }
+
+        /*************************************************************
+         * 5. 第二頁：當日三項作業訂正看板 (3欄並排, 一列10人共3列29人)
+         *************************************************************/
+        function renderBoardPage() {
+            const container = document.getElementById('threeColumnsBoard');
+            container.innerHTML = '';
+
+            const headerThemes = [
+                { border: 'border-indigo-500', bg: 'bg-indigo-600', lightBg: 'bg-indigo-50', badge: 'bg-indigo-700' },
+                { border: 'border-teal-500',   bg: 'bg-teal-600',   lightBg: 'bg-teal-50',   badge: 'bg-teal-700' },
+                { border: 'border-purple-500', bg: 'bg-purple-600', lightBg: 'bg-purple-50', badge: 'bg-purple-700' }
+            ];
+
+            currentDayData.tasks.forEach((task, taskIdx) => {
+                const theme = headerThemes[taskIdx];
+                
+                // 統計目前紅色(待訂正)與綠色(已完成)座號清單
+                const redSeats = [];
+                const greenSeats = [];
+                for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                    if (task.seats[i] === STATE_RED) redSeats.push(i);
+                    if (task.seats[i] === STATE_GREEN) greenSeats.push(i);
+                }
+
+                // 產生常用快捷標籤按鈕 (老師模式下顯示)
+                const quickTagsHtml = currentMode === 'teacher' ? `
+                    <div class="flex flex-wrap items-center gap-1.5 mt-2">
+                        <span class="text-xs font-black text-slate-500 mr-0.5"><i class="fa-solid fa-bolt text-amber-500"></i> 快捷填入:</span>
+                        ${QUICK_TAGS.map(tag => `
+                            <button type="button" onclick="applyQuickTag(${taskIdx}, '${tag}')"
+                                class="px-2.5 py-1 text-sm font-black rounded-lg bg-white hover:bg-indigo-600 hover:text-white text-slate-700 border border-slate-300 shadow-sm active:scale-95 transition">
+                                ${tag}
+                            </button>
+                        `).join('')}
+                        <button type="button" onclick="clearTaskTitle(${taskIdx})"
+                            class="px-2 py-1 text-xs font-bold rounded-lg bg-slate-200 hover:bg-rose-500 hover:text-white text-slate-600 ml-auto transition" title="清空作業名稱">
+                            清空名稱
+                        </button>
+                    </div>
+                ` : '';
+
+                // 產生老師快速批次設定列
+                const teacherBatchToolsHtml = currentMode === 'teacher' ? `
+                    <div class="flex items-center justify-between bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
+                        <span>點擊號碼切換「🔴待訂正 / ⚪無須訂正」</span>
+                        <div class="flex items-center gap-1.5">
+                            <button onclick="setAllTaskSeats(${taskIdx}, ${STATE_RED})" class="px-2.5 py-1 rounded-lg bg-rose-100 hover:bg-rose-600 hover:text-white text-rose-700 font-black transition">全班待訂正</button>
+                            <button onclick="confirmClearTaskSeats(${taskIdx})" class="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-700 hover:text-white text-slate-700 font-black transition">全部重設</button>
+                        </div>
+                    </div>
+                ` : '';
+
+                // 產生 1~29 號按鈕 (一列 10 人，共三列)
+                let seatButtonsHtml = '';
+                for (let seatNum = 1; seatNum <= TOTAL_STUDENTS; seatNum++) {
+                    const st = task.seats[seatNum];
+                    let stateClass = 'seat-none';
+                    let statusIcon = '';
+
+                    if (st === STATE_RED) {
+                        stateClass = 'seat-red';
+                    } else if (st === STATE_GREEN) {
+                        stateClass = 'seat-green';
+                        statusIcon = '<i class="fa-solid fa-check text-[10px] absolute top-1 right-1 opacity-85"></i>';
+                    }
+
+                    seatButtonsHtml += `
+                        <button type="button"
+                            onclick="handleSeatClick(${taskIdx}, ${seatNum})"
+                            class="seat-btn ${stateClass} rounded-2xl py-3 sm:py-3.5 flex items-center justify-center font-black text-2xl sm:text-3xl select-none cursor-pointer">
+                            ${statusIcon}
+                            <span>${seatNum}</span>
+                        </button>
+                    `;
+                }
+
+                // 第 30 格放一個小統計裝飾格（補足 10x3 視覺對齊）
+                seatButtonsHtml += `
+                    <div class="rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-xs font-bold select-none bg-slate-50/60">
+                        <span>共29人</span>
+                    </div>
+                `;
+
+                // 底部「請抄訂正功課於聯絡簿」統計區塊
+                let footerNoticeHtml = '';
+                if (redSeats.length > 0) {
+                    footerNoticeHtml = `
+                        <div class="bg-amber-50 border-3 border-rose-500 rounded-2xl p-3 shadow-inner">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-base sm:text-lg font-black text-rose-700 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
+                                    請抄訂正功課於聯絡簿：
+                                </span>
+                                <span class="text-xs font-black px-2.5 py-0.5 rounded-full bg-rose-600 text-white">
+                                    未訂正 ${redSeats.length} 人
+                                </span>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5 items-center pt-1">
+                                ${redSeats.map(n => `
+                                    <span class="inline-flex items-center justify-center bg-rose-600 text-white font-black text-xl px-3 py-0.5 rounded-xl shadow-sm">
+                                        ${n}號
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else if (greenSeats.length > 0) {
+                    footerNoticeHtml = `
+                        <div class="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-3 text-center">
+                            <div class="text-lg font-black text-emerald-700 flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-circle-check text-2xl text-emerald-500"></i>
+                                <span>請抄訂正功課於聯絡簿：🎉 全數訂正完成！（共 ${greenSeats.length} 人完成）</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    footerNoticeHtml = `
+                        <div class="bg-slate-100 border-2 border-slate-200 rounded-2xl p-3 text-center">
+                            <div class="text-base font-bold text-slate-500 flex items-center justify-center gap-2">
+                                <i class="fa-regular fa-face-smile"></i>
+                                <span>請抄訂正功課於聯絡簿：尚無待訂正座號</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 組合單一作業直欄卡片
+                const card = document.createElement('div');
+                card.className = `bg-white rounded-3xl shadow-md border-t-8 ${theme.border} border-x-2 border-b-2 border-slate-200 flex flex-col justify-between p-3.5 gap-3`;
+                card.innerHTML = `
+                    <!-- 上半部：標題與作業項目輸入框 -->
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="${theme.bg} text-white font-black px-3.5 py-1 rounded-xl text-base shadow-sm flex items-center gap-1.5">
+                                <i class="fa-solid fa-book-open"></i> ${task.label}
+                            </span>
+                            <div class="flex items-center gap-2 text-sm font-black">
+                                <span class="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 border border-rose-300">
+                                    🔴 待訂正: ${redSeats.length}
+                                </span>
+                                <span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                    🟢 已完成: ${greenSeats.length}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- 作業名稱空白輸入欄 -->
+                        <div class="${theme.lightBg} p-2.5 rounded-2xl border-2 border-slate-200">
+                            <div class="relative flex items-center">
+                                <input type="text" 
+                                    value="${escapeHtml(task.title)}"
+                                    oninput="updateTaskTitle(${taskIdx}, this.value)"
+                                    ${currentMode === 'student' ? 'readonly' : ''}
+                                    placeholder="請輸入作業項目（例：數習 P.32～35）"
+                                    class="w-full bg-white text-slate-900 font-black text-xl sm:text-2xl px-3.5 py-2 rounded-xl border-2 border-slate-300 focus:border-indigo-600 focus:outline-none placeholder:text-slate-400 placeholder:font-bold ${currentMode === 'student' ? 'cursor-default bg-slate-50' : ''}">
+                            </div>
+                            ${quickTagsHtml}
+                        </div>
+
+                        ${teacherBatchToolsHtml}
+                    </div>
+
+                    <!-- 中間部：29人座號按鈕陣列 (一列10人，共3列) -->
+                    <div class="my-auto py-1">
+                        <div class="grid-10-cols gap-2">
+                            ${seatButtonsHtml}
+                        </div>
+                    </div>
+
+                    <!-- 底部：請抄訂正功課於聯絡簿統計區 -->
+                    <div>
+                        ${footerNoticeHtml}
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+
+            updateHeaderBadge();
+        }
+
+        // 點擊座號按鈕的兩階段防呆邏輯
+        function handleSeatClick(taskIdx, seatNum) {
+            const task = currentDayData.tasks[taskIdx];
+            const currentState = task.seats[seatNum];
+
+            if (currentMode === 'teacher') {
+                // 老師設定模式：預設(灰) -> 待訂正(紅) -> 預設(灰)
+                // 若原本是已訂正(綠)，老師點擊也會切換回無須訂正(灰)
+                if (currentState === STATE_NONE) {
+                    task.seats[seatNum] = STATE_RED;
+                } else {
+                    task.seats[seatNum] = STATE_NONE;
+                }
+                playSound('click');
+            } else {
+                // 學生訂正模式：只允許「紅 <-> 綠」切換，點擊灰色無須訂正會防呆攔截
+                if (currentState === STATE_RED) {
+                    task.seats[seatNum] = STATE_GREEN;
+                    playSound('complete');
+                    const taskName = task.title.trim() || task.label;
+                    showToast(`🎉 太棒了！${seatNum} 號「${taskName}」訂正完成！`, 'success');
+                } else if (currentState === STATE_GREEN) {
+                    // 萬一按錯同學的號碼，再點一下綠色可復原回紅色
+                    task.seats[seatNum] = STATE_RED;
+                    playSound('click');
+                    showToast(`↩️ 已將 ${seatNum} 號恢復為「🔴 待訂正」狀態`, 'warning');
+                } else {
+                    // 灰色狀態防誤觸
+                    playSound('lock');
+                    showToast(`💡 ${seatNum} 號這項作業不用訂正喔！（如需設定請切換至老師模式）`, 'info');
+                    return;
+                }
+            }
+
+            saveCurrentDayToStorage();
+            renderBoardPage();
+        }
+
+        // 更新作業項目文字
+        function updateTaskTitle(taskIdx, val) {
+            currentDayData.tasks[taskIdx].title = val;
+            saveCurrentDayToStorage();
+            updateHeaderBadge();
+        }
+
+        // 點擊常用作業快捷標籤
+        function applyQuickTag(taskIdx, tag) {
+            const currentVal = currentDayData.tasks[taskIdx].title.trim();
+            if (!currentVal) {
+                currentDayData.tasks[taskIdx].title = tag + ' ';
+            } else if (!currentVal.includes(tag)) {
+                currentDayData.tasks[taskIdx].title = currentVal + ' ' + tag + ' ';
+            }
+            playSound('click');
+            saveCurrentDayToStorage();
+            renderBoardPage();
+        }
+
+        function clearTaskTitle(taskIdx) {
+            currentDayData.tasks[taskIdx].title = '';
+            saveCurrentDayToStorage();
+            renderBoardPage();
+        }
+
+        function setAllTaskSeats(taskIdx, targetState) {
+            for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                currentDayData.tasks[taskIdx].seats[i] = targetState;
+            }
+            playSound('click');
+            saveCurrentDayToStorage();
+            renderBoardPage();
+        }
+
+        function confirmClearTaskSeats(taskIdx) {
+            const task = currentDayData.tasks[taskIdx];
+            const name = task.title.trim() || task.label;
+            openModal(
+                `重設「${name}」所有座號`,
+                `確定要將「${name}」的所有紅、綠座號全部清除重設為「無須訂正」嗎？`,
+                () => {
+                    setAllTaskSeats(taskIdx, STATE_NONE);
+                    showToast(`已重設「${name}」的座號狀態`, 'info');
+                }
+            );
+        }
+
+        function updateHeaderBadge() {
+            let totalRed = 0;
+            currentDayData.tasks.forEach(task => {
+                for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                    if (task.seats[i] === STATE_RED) totalRed++;
+                }
+            });
+            const badge = document.getElementById('headerTotalRedBadge');
+            badge.textContent = totalRed;
+            badge.className = totalRed > 0
+                ? 'ml-1 px-2.5 py-0.5 text-sm rounded-full bg-rose-600 text-white font-black animate-pulse'
+                : 'ml-1 px-2.5 py-0.5 text-sm rounded-full bg-emerald-600 text-white font-black';
+        }
+
+        /*************************************************************
+         * 6. 分頁一（首頁）：📊 每日訂正統計號碼資料與歷史紀錄
+         *************************************************************/
+        function renderHomePage() {
+            document.getElementById('homeDateTitle').textContent = `（${currentDate}）`;
+
+            // 1. 計算依學生座號彙整的未訂正清單
+            const studentMissingMap = {}; // { seatNum: [taskTitle1, taskTitle2] }
+            for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                const missingTasks = [];
+                currentDayData.tasks.forEach((task, idx) => {
+                    if (task.seats[i] === STATE_RED) {
+                        missingTasks.push(task.title.trim() || `作業(${idx + 1})`);
+                    }
+                });
+                if (missingTasks.length > 0) {
+                    studentMissingMap[i] = missingTasks;
+                }
+            }
+
+            const missingSeatNumbers = Object.keys(studentMissingMap).map(Number).sort((a, b) => a - b);
+            const summaryBadge = document.getElementById('homeSummaryBadge');
+            const summaryContainer = document.getElementById('homeContactBookSummary');
+
+            if (missingSeatNumbers.length > 0) {
+                summaryBadge.textContent = `尚有 ${missingSeatNumbers.length} 人未完成訂正`;
+                summaryBadge.className = 'text-xl font-black px-4 py-1.5 rounded-full bg-rose-100 text-rose-700 border-2 border-rose-300';
+                summaryContainer.innerHTML = `
+                    <div class="flex flex-wrap gap-3 w-full">
+                        ${missingSeatNumbers.map(seat => `
+                            <div class="bg-white border-3 border-rose-500 rounded-2xl px-4 py-2.5 shadow-sm flex items-center gap-2.5">
+                                <span class="bg-rose-600 text-white font-black text-2xl px-3.5 py-1 rounded-xl shadow">
+                                    ${seat}號
+                                </span>
+                                <span class="text-slate-800 font-black text-xl">
+                                    ${studentMissingMap[seat].map(t => escapeHtml(t)).join('、')}
+                                </span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                summaryBadge.textContent = `今日全班皆已完成訂正！`;
+                summaryBadge.className = 'text-xl font-black px-4 py-1.5 rounded-full bg-emerald-100 text-emerald-700 border-2 border-emerald-300';
+                summaryContainer.innerHTML = `
+                    <div class="w-full text-center py-4 text-2xl font-black text-emerald-700 flex items-center justify-center gap-3">
+                        <i class="fa-solid fa-trophy text-3xl text-amber-500"></i>
+                        <span>太棒了！目前沒有任何未訂正的紅色座號！</span>
+                    </div>
+                `;
+            }
+
+            // 2. 渲染當日三項作業個別統計卡
+            const cardsContainer = document.getElementById('homeThreeCardsContainer');
+            cardsContainer.innerHTML = '';
+
+            currentDayData.tasks.forEach((task, idx) => {
+                const redList = [];
+                const greenList = [];
+                for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                    if (task.seats[i] === STATE_RED) redList.push(i);
+                    if (task.seats[i] === STATE_GREEN) greenList.push(i);
+                }
+
+                const titleDisplay = task.title.trim() || `<span class="text-slate-400">（尚未填寫${task.label}名稱）</span>`;
+
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-3xl p-5 shadow-md border-2 border-slate-200 flex flex-col justify-between gap-4';
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-center justify-between border-b-2 border-slate-100 pb-3 mb-3">
+                            <span class="bg-slate-800 text-white font-black px-3.5 py-1 rounded-xl text-base">
+                                ${task.label}
+                            </span>
+                            <span class="text-sm font-bold text-slate-500">
+                                應訂正共 ${redList.length + greenList.length} 人
+                            </span>
+                        </div>
+                        <h3 class="text-2xl font-black text-indigo-950 mb-4">${titleDisplay}</h3>
+
+                        <!-- 未訂正 (紅) -->
+                        <div class="bg-rose-50 border-2 border-rose-200 rounded-2xl p-3.5 mb-3">
+                            <div class="text-base font-black text-rose-800 mb-2 flex items-center justify-between">
+                                <span>🔴 請抄訂正功課於聯絡簿（未訂正）：</span>
+                                <span class="bg-rose-600 text-white px-2.5 py-0.5 rounded-full text-sm">${redList.length} 人</span>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${redList.length > 0 
+                                    ? redList.map(n => `<span class="bg-rose-600 text-white font-black text-lg px-3 py-0.5 rounded-xl">${n}號</span>`).join('')
+                                    : '<span class="text-emerald-700 font-black text-base">🎉 無未訂正座號！</span>'
+                                }
+                            </div>
+                        </div>
+
+                        <!-- 已訂正完成 (綠) -->
+                        <div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-3.5">
+                            <div class="text-base font-black text-emerald-800 mb-2 flex items-center justify-between">
+                                <span>🟢 已訂正完成座號：</span>
+                                <span class="bg-emerald-600 text-white px-2.5 py-0.5 rounded-full text-sm">${greenList.length} 人</span>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${greenList.length > 0 
+                                    ? greenList.map(n => `<span class="bg-emerald-600 text-white font-black text-lg px-3 py-0.5 rounded-xl">${n}號</span>`).join('')
+                                    : '<span class="text-slate-400 font-bold text-sm">尚無完成紀錄</span>'
+                                }
+                            </div>
+                        </div>
+                    </div>
+                `;
+                cardsContainer.appendChild(card);
+            });
+
+            // 3. 渲染歷史每日訂正統計紀錄表
+            renderHistoryTable();
+        }
+
+        function renderHistoryTable() {
+            const tbody = document.getElementById('historyTableBody');
+            const allRecords = getAllHistoryRecords();
+            const dates = Object.keys(allRecords).sort((a, b) => b.localeCompare(a));
+
+            if (dates.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-8 text-center text-slate-400 font-bold text-lg">
+                            目前尚無歷史紀錄
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = dates.map(dateStr => {
+                const record = allRecords[dateStr];
+                const isCurrent = dateStr === currentDate;
+                const allMissingSet = new Set();
+
+                const taskCells = (record.tasks || []).map((t, i) => {
+                    const reds = [];
+                    const greens = [];
+                    for (let s = 1; s <= TOTAL_STUDENTS; s++) {
+                        if (t.seats && t.seats[s] === STATE_RED) {
+                            reds.push(s);
+                            allMissingSet.add(s);
+                        }
+                        if (t.seats && t.seats[s] === STATE_GREEN) {
+                            greens.push(s);
+                        }
+                    }
+                    const name = t.title && t.title.trim() ? escapeHtml(t.title.trim()) : `<span class="text-slate-400">未命名作業${i+1}</span>`;
+                    return `
+                        <td class="py-3 px-4 align-top">
+                            <div class="font-black text-slate-800 text-base mb-1">${name}</div>
+                            <div class="flex flex-wrap gap-1 text-xs">
+                                <span class="px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-black">
+                                    未訂正(${reds.length}): ${reds.length > 0 ? reds.join(', ') : '無'}
+                                </span>
+                                <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-black">
+                                    完成(${greens.length}): ${greens.length > 0 ? greens.join(', ') : '無'}
+                                </span>
+                            </div>
+                        </td>
+                    `;
+                }).join('');
+
+                const allMissingArr = Array.from(allMissingSet).sort((a, b) => a - b);
+
+                return `
+                    <tr class="${isCurrent ? 'bg-amber-50/80' : 'hover:bg-slate-50'} transition">
+                        <td class="py-3 px-4 font-black text-lg text-slate-900 whitespace-nowrap">
+                            ${dateStr}
+                            ${isCurrent ? '<span class="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-amber-400 text-slate-950 font-black">目前檢視</span>' : ''}
+                        </td>
+                        ${taskCells}
+                        <td class="py-3 px-4">
+                            ${allMissingArr.length > 0
+                                ? `<span class="text-rose-600 font-black">${allMissingArr.join('、')} 號</span>`
+                                : `<span class="text-emerald-600 font-black"><i class="fa-solid fa-check-circle mr-1"></i>全數完成</span>`
+                            }
+                        </td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                            <button onclick="loadDateAndOpenBoard('${dateStr}')" 
+                                class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-black mr-1 shadow-sm transition">
+                                <i class="fa-solid fa-folder-open mr-1"></i>載入看板
+                            </button>
+                            <button onclick="confirmDeleteHistory('${dateStr}')" 
+                                class="px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-600 hover:text-white text-rose-600 text-sm font-black transition" title="刪除此日紀錄">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function loadDateAndOpenBoard(dateStr) {
+            loadDateData(dateStr);
+            switchTab('board');
+            showToast(`📅 已載入 ${dateStr} 的作業訂正資料`, 'info');
+        }
+
+        function confirmDeleteHistory(dateStr) {
+            openModal(
+                `刪除 ${dateStr} 紀錄`,
+                `確定要永久刪除「${dateStr}」的作業訂正統計資料嗎？`,
+                () => {
+                    const allRecords = getAllHistoryRecords();
+                    delete allRecords[dateStr];
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(allRecords));
+                    if (dateStr === currentDate) {
+                        currentDayData = createEmptyDayData(currentDate);
+                        saveCurrentDayToStorage();
+                    }
+                    renderAll();
+                    showToast(`🗑️ 已刪除 ${dateStr} 的紀錄`, 'info');
+                }
+            );
+        }
+
+        // 匯出 CSV 報表供老師留存
+        function exportHistoryCSV() {
+            const allRecords = getAllHistoryRecords();
+            const dates = Object.keys(allRecords).sort((a, b) => b.localeCompare(a));
+            if (dates.length === 0) {
+                showToast('目前沒有可匯出的紀錄', 'warning');
+                return;
+            }
+
+            const rows = [
+                ['日期', '作業項目一', '作業一未訂正座號', '作業一已完成座號', '作業項目二', '作業二未訂正座號', '作業二已完成座號', '作業項目三', '作業三未訂正座號', '作業三已完成座號']
+            ];
+
+            dates.forEach(d => {
+                const rec = allRecords[d];
+                const row = [d];
+                (rec.tasks || []).forEach(t => {
+                    const reds = [];
+                    const greens = [];
+                    for (let i = 1; i <= TOTAL_STUDENTS; i++) {
+                        if (t.seats && t.seats[i] === STATE_RED) reds.push(i);
+                        if (t.seats && t.seats[i] === STATE_GREEN) greens.push(i);
+                    }
+                    row.push(t.title || '未命名');
+                    row.push(reds.join('、'));
+                    row.push(greens.join('、'));
+                });
+                rows.push(row);
+            });
+
+            const csvContent = '\uFEFF' + rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `六年級作業訂正統計_${currentDate}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('📥 已匯出 CSV 統計檔案', 'success');
+        }
+
+        /*************************************************************
+         * 7. 大螢幕倒數計時器邏輯
+         *************************************************************/
+        function updateTimerDisplay() {
+            const mins = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+            const secs = String(timerSeconds % 60).padStart(2, '0');
+            document.getElementById('timerDisplay').textContent = `${mins}:${secs}`;
+        }
+
+        function addTimerMinutes(mins) {
+            stopAlarmEffect();
+            timerSeconds += mins * 60;
+            if (timerSeconds > 5999) timerSeconds = 5999; // 上限 99分59秒
+            updateTimerDisplay();
+            playSound('click');
+        }
+
+        function toggleTimer() {
+            stopAlarmEffect();
+            if (isTimerRunning) {
+                pauseTimer();
+            } else {
+                if (timerSeconds <= 0) {
+                    showToast('⏰ 請先點選「+1分、+3分、+5分」設定倒數時間！', 'warning');
+                    return;
+                }
+                startTimer();
+            }
+        }
+
+        function startTimer() {
+            isTimerRunning = true;
+            document.getElementById('timerPlayIcon').className = 'fa-solid fa-pause';
+            document.getElementById('timerStartText').textContent = '暫停';
+            document.getElementById('timerStartBtn').className = 'bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-3.5 py-1.5 rounded-xl text-base transition flex items-center gap-1 shadow';
+
+            timerInterval = setInterval(() => {
+                if (timerSeconds > 0) {
+                    timerSeconds--;
+                    updateTimerDisplay();
+                } else {
+                    pauseTimer();
+                    triggerTimerAlarm();
+                }
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            isTimerRunning = false;
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            document.getElementById('timerPlayIcon').className = 'fa-solid fa-play';
+            document.getElementById('timerStartText').textContent = '開始';
+            document.getElementById('timerStartBtn').className = 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black px-3.5 py-1.5 rounded-xl text-base transition flex items-center gap-1 shadow';
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            stopAlarmEffect();
+            timerSeconds = 0;
+            updateTimerDisplay();
+            playSound('click');
+        }
+
+        function triggerTimerAlarm() {
+            const display = document.getElementById('timerDisplay');
+            display.classList.add('timer-alarm');
+            showToast('⏰ 訂正時間到囉！請還沒完成的同學把訂正功課抄進聯絡簿！', 'error');
+            playSound('alarm');
+            let count = 0;
+            alarmInterval = setInterval(() => {
+                count++;
+                if (count < 4) {
+                    playSound('alarm');
+                } else {
+                    stopAlarmEffect();
+                }
+            }, 1200);
+        }
+
+        function stopAlarmEffect() {
+            if (alarmInterval) {
+                clearInterval(alarmInterval);
+                alarmInterval = null;
+            }
+            document.getElementById('timerDisplay').classList.remove('timer-alarm');
+        }
+
+        /*************************************************************
+         * 8. 自訂確認視窗與輔助函式
+         *************************************************************/
+        let modalConfirmCallback = null;
+
+        function openModal(title, message, onConfirm) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
+            modalConfirmCallback = onConfirm;
+            const modal = document.getElementById('customModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('customModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            modalConfirmCallback = null;
+        }
+
+        document.getElementById('modalConfirmBtn').addEventListener('click', () => {
+            if (typeof modalConfirmCallback === 'function') {
+                modalConfirmCallback();
+            }
+            closeModal();
+        });
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function renderAll() {
+            renderBoardPage();
+            renderHomePage();
+        }
+
+        /*************************************************************
+         * 9. 初始化啟動
+         *************************************************************/
+        window.onload = function () {
+            const datePicker = document.getElementById('datePicker');
+            datePicker.value = currentDate;
+
+            datePicker.addEventListener('change', (e) => {
+                if (e.target.value) {
+                    loadDateData(e.target.value);
+                    showToast(`📅 已切換至 ${e.target.value}`, 'info');
+                }
+            });
+
+            // 載入今日資料
+            loadDateData(currentDate);
+            // 設定預設為老師設定模式
+            setInteractionMode('teacher');
+            // 預設顯示第二頁（當日訂正看板），也可點擊頂部切換至首頁統計
+            switchTab('board');
+            updateTimerDisplay();
+        };
+    </script>
+</body>
+</html>
